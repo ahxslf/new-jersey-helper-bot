@@ -3,6 +3,19 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
+// ==================== WEB SERVER (for hosting platforms like Render) ====================
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('New Jersey | Helper is running');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 // ==================== CONFIG ====================
 const STAFF_ROLE_ID = '1511345038960099389';
 const INFRACTION_CHANNEL_ID = '1511104457646018720';
