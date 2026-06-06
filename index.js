@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -175,13 +175,10 @@ async function updateSessionChannelStatus(status) {
 
 // ==================== EMBED HELPERS (Clean & Professional) ====================
 function createInfractionEmbed(data) {
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(0xE74C3C)
     .setThumbnail(SERVER_LOGO_URL)
-    .setAuthor({
-      name: data.targetUsername,
-      iconURL: data.targetAvatar,
-    })
+    .setAuthor({ name: data.targetUsername, iconURL: data.targetAvatar })
     .setTitle("You've been infracted")
     .setDescription(
       `> **Staff:** <@${data.staffId}>\n` +
@@ -195,18 +192,13 @@ function createInfractionEmbed(data) {
       text: `Issued by: ${data.staffUsername} • Today at ${data.time}`,
       iconURL: data.staffAvatar,
     });
-
-  return embed;
 }
 
 function createPromotionEmbed(data) {
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(0x2ECC71)
     .setThumbnail(SERVER_LOGO_URL)
-    .setAuthor({
-      name: data.targetUsername,
-      iconURL: data.targetAvatar,
-    })
+    .setAuthor({ name: data.targetUsername, iconURL: data.targetAvatar })
     .setTitle("You've been promoted")
     .setDescription(
       `> **Staff:** <@${data.staffId}>\n` +
@@ -220,8 +212,6 @@ function createPromotionEmbed(data) {
       text: `Issued by: ${data.staffUsername} • Today at ${data.time}`,
       iconURL: data.staffAvatar,
     });
-
-  return embed;
 }
 
 function createActivityTestEmbed(staffId, time) {
@@ -280,7 +270,10 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (!interaction.guild) {
-    return interaction.reply({ content: '❌ This command can only be used in the server.', ephemeral: true });
+    return interaction.reply({ 
+      content: '❌ This command can only be used in the server.', 
+      flags: MessageFlags.Ephemeral 
+    });
   }
 
   const member = interaction.member;
@@ -290,15 +283,15 @@ client.on('interactionCreate', async (interaction) => {
   if (staffCommands.includes(interaction.commandName) && !hasStaffRole) {
     return interaction.reply({
       content: '❌ You do not have permission to use this command.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
   const time = getCurrentTime();
 
   try {
-    // Defer for all commands to prevent "application did not respond"
-    await interaction.deferReply({ ephemeral: true });
+    // Use flags instead of ephemeral (fixes deprecation warning)
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (interaction.commandName === 'infract') {
       const targetUser = interaction.options.getUser('user');
@@ -364,17 +357,28 @@ client.on('interactionCreate', async (interaction) => {
 
       await channel.send({ content: `<@${targetUser.id}>`, embeds: [embed] });
 
-      // Role assignment
-      let roleAssigned = false;
+      // Role assignment with better error handling
+      let roleMessage = '';
       try {
         const guildMember = await interaction.guild.members.fetch(targetUser.id);
-        if (!guildMember.roles.cache.has(newRole.id)) {
+        
+        // Check if bot can manage the role
+        const botMember = await interaction.guild.members.fetch(client.user.id);
+        const rolePosition = newRole.position;
+        const botHighestRole = botMember.roles.highest.position;
+
+        if (rolePosition >= botHighestRole) {
+          roleMessage = `⚠️ Could not assign role (bot's role is too low in hierarchy). Please assign <@&${newRole.id}> manually.`;
+        } else if (!guildMember.roles.cache.has(newRole.id)) {
           await guildMember.roles.add(newRole);
-          roleAssigned = true;
           console.log(`✅ Role ${newRole.name} assigned to ${targetUser.tag}`);
+          roleMessage = `✅ Role successfully assigned.`;
+        } else {
+          roleMessage = `ℹ️ User already had the role.`;
         }
       } catch (roleErr) {
         console.error('Role assignment failed:', roleErr.message);
+        roleMessage = `⚠️ Failed to assign role: ${roleErr.message}. Please assign <@&${newRole.id}> manually to ${targetUser.tag}.`;
       }
 
       await logPromotion({
@@ -389,10 +393,9 @@ client.on('interactionCreate', async (interaction) => {
         notes,
       });
 
-      let replyMsg = `✅ Promotion #${caseNum} issued to ${targetUser.tag}.`;
-      if (!roleAssigned) replyMsg += ` (Warning: Could not assign the role automatically. Please do it manually.)`;
-
-      await interaction.editReply({ content: replyMsg });
+      await interaction.editReply({ 
+        content: `✅ Promotion #${caseNum} issued to ${targetUser.tag}.\n${roleMessage}` 
+      });
     }
 
     else if (interaction.commandName === 'activity-test') {
@@ -482,7 +485,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.editReply({ content: 'You have no infractions.' });
       }
 
-      // For simplicity in this version: show all in one embed (can be paginated later if needed)
       let desc = '';
       logs.forEach(l => {
         const status = l.status === 'voided' ? 'Voided' : 'Active';
@@ -510,7 +512,10 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ content: '❌ An unexpected error occurred.' }).catch(() => {});
     } else {
-      await interaction.reply({ content: '❌ An unexpected error occurred.', ephemeral: true }).catch(() => {});
+      await interaction.reply({ 
+        content: '❌ An unexpected error occurred.', 
+        flags: MessageFlags.Ephemeral 
+      }).catch(() => {});
     }
   }
 });
