@@ -133,7 +133,7 @@ async function updateSessionChannelStatus(status) {
 
 // ==================== CLIENT ====================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers], // GuildMembers eklendi (rol atama için daha stabil)
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
 // ==================== READY ====================
@@ -204,13 +204,13 @@ client.on('interactionCreate', async (interaction) => {
           iconURL: interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
         });
 
-      // Embed + kullanıcıyı ping'le
+      // Send embed + ping the user
       await channel.send({
         content: `<@${targetUser.id}>`,
         embeds: [embed]
       });
 
-      // JSON'a kaydet
+      // Save to JSON log
       await logInfraction({
         case: caseNum,
         userId: targetUser.id,
@@ -266,23 +266,22 @@ client.on('interactionCreate', async (interaction) => {
           iconURL: interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
         });
 
-      // Embed + kullanıcıyı ping'le
+      // Send embed + ping the user
       await channel.send({
         content: `<@${targetUser.id}>`,
         embeds: [embed]
       });
 
-      // Rolü ata
+      // Assign the role
       try {
         const guildMember = await interaction.guild.members.fetch(targetUser.id);
         await guildMember.roles.add(newRole);
         console.log(`✅ Role ${newRole.name} assigned to ${targetUser.tag}`);
       } catch (roleErr) {
         console.error('Failed to assign role:', roleErr);
-        // Staff'a ephemeral bilgi verebiliriz ama şimdilik sadece log
       }
 
-      // JSON'a kaydet
+      // Save to JSON log
       await logPromotion({
         case: caseNum,
         userId: targetUser.id,
