@@ -14,6 +14,8 @@ const SERVER_LOGO_URL = 'https://cdn.discordapp.com/icons/1510749376593662032/50
 const BANNER_URL = 'https://cdn.discordapp.com/attachments/980177239373140008/1512107963555385394/partners_1.png?ex=6a22e3c8&is=6a219248&hm=823f48ca844acacdf92d56999d1741370fd58b161e247f6d161206458ab1f24f';
 
 const casesPath = path.join(__dirname, 'data', 'cases.json');
+const infractionsPath = path.join(__dirname, 'data', 'infractions.json');
+const promotionsPath = path.join(__dirname, 'data', 'promotions.json');
 
 // ==================== CASE MANAGEMENT ====================
 function loadCases() {
@@ -43,6 +45,54 @@ function getNextCase(type) {
   return cases[type];
 }
 
+// ==================== LOG SYSTEM ====================
+function loadLogs(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    }
+  } catch (err) {
+    console.error(`Error loading logs from ${filePath}:`, err);
+  }
+  return [];
+}
+
+function saveLogs(filePath, logs) {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(logs, null, 2));
+  } catch (err) {
+    console.error(`Error saving logs to ${filePath}:`, err);
+  }
+}
+
+async function logInfraction(data) {
+  try {
+    const logs = loadLogs(infractionsPath);
+    logs.push({
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+    saveLogs(infractionsPath, logs);
+    console.log(`✅ Infraction #${data.case} logged to JSON.`);
+  } catch (err) {
+    console.error('Error logging infraction:', err);
+  }
+}
+
+async function logPromotion(data) {
+  try {
+    const logs = loadLogs(promotionsPath);
+    logs.push({
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+    saveLogs(promotionsPath, logs);
+    console.log(`✅ Promotion #${data.case} logged to JSON.`);
+  } catch (err) {
+    console.error('Error logging promotion:', err);
+  }
+}
+
 // ==================== TIME FORMAT ====================
 function getCurrentTime() {
   const now = new Date();
@@ -67,7 +117,6 @@ async function updateSessionChannelStatus(status) {
   try {
     const channel = await client.channels.fetch(SESSION_CHANNEL_ID);
     if (channel && channel.isTextBased()) {
-      // Check if bot has permission to manage the channel
       if (channel.permissionsFor(client.user)?.has('ManageChannels')) {
         if (channel.name !== newName) {
           await channel.setName(newName);
@@ -84,15 +133,13 @@ async function updateSessionChannelStatus(status) {
 
 // ==================== CLIENT ====================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers], // GuildMembers eklendi (rol atama için daha stabil)
 });
 
 // ==================== READY ====================
 client.once('ready', () => {
   console.log(`✅ Bot is online! Logged in as ${client.user.tag}`);
   console.log(`New Jersey | Helper ready for New Jersey State Roleplay`);
-  // Optionally set initial status on startup (uncomment if desired)
-  // updateSessionChannelStatus('red');
 });
 
 // ==================== INTERACTION HANDLER ====================
@@ -136,7 +183,7 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0xFF4444) // Red-ish for infractions
+        .setColor(0xFF4444)
         .setAuthor({
           name: targetUser.username,
           iconURL: targetUser.displayAvatarURL({ dynamic: true, size: 256 }),
@@ -157,7 +204,23 @@ client.on('interactionCreate', async (interaction) => {
           iconURL: interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
         });
 
-      await channel.send({ embeds: [embed] });
+      // Embed + kullanıcıyı ping'le
+      await channel.send({
+        content: `<@${targetUser.id}>`,
+        embeds: [embed]
+      });
+
+      // JSON'a kaydet
+      await logInfraction({
+        case: caseNum,
+        userId: targetUser.id,
+        userTag: targetUser.tag,
+        staffId: interaction.user.id,
+        staffTag: interaction.user.tag,
+        punishment: punishment,
+        reason: reason,
+        notes: notes
+      });
 
       await interaction.reply({
         content: `✅ Infraction #${caseNum} successfully issued to ${targetUser.tag}.`,
@@ -182,7 +245,7 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0x44FF44) // Green for promotions
+        .setColor(0x44FF44)
         .setAuthor({
           name: targetUser.username,
           iconURL: targetUser.displayAvatarURL({ dynamic: true, size: 256 }),
@@ -203,7 +266,34 @@ client.on('interactionCreate', async (interaction) => {
           iconURL: interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
         });
 
-      await channel.send({ embeds: [embed] });
+      // Embed + kullanıcıyı ping'le
+      await channel.send({
+        content: `<@${targetUser.id}>`,
+        embeds: [embed]
+      });
+
+      // Rolü ata
+      try {
+        const guildMember = await interaction.guild.members.fetch(targetUser.id);
+        await guildMember.roles.add(newRole);
+        console.log(`✅ Role ${newRole.name} assigned to ${targetUser.tag}`);
+      } catch (roleErr) {
+        console.error('Failed to assign role:', roleErr);
+        // Staff'a ephemeral bilgi verebiliriz ama şimdilik sadece log
+      }
+
+      // JSON'a kaydet
+      await logPromotion({
+        case: caseNum,
+        userId: targetUser.id,
+        userTag: targetUser.tag,
+        staffId: interaction.user.id,
+        staffTag: interaction.user.tag,
+        newRoleId: newRole.id,
+        newRoleName: newRole.name,
+        reason: reason,
+        notes: notes
+      });
 
       await interaction.reply({
         content: `✅ Promotion #${caseNum} successfully issued to ${targetUser.tag}.`,
@@ -221,7 +311,7 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0x00BFFF) // Light blue
+        .setColor(0x00BFFF)
         .setThumbnail(SERVER_LOGO_URL)
         .setTitle("Activity Test")
         .setDescription(
@@ -233,7 +323,6 @@ client.on('interactionCreate', async (interaction) => {
       const message = await channel.send({ embeds: [embed] });
       await message.react('✅');
 
-      // Rename channel to yellow (activity test in progress)
       await updateSessionChannelStatus('yellow');
 
       await interaction.reply({
@@ -254,7 +343,7 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0xFFD700) // Gold
+        .setColor(0xFFD700)
         .setThumbnail(SERVER_LOGO_URL)
         .setTitle("New Jersey State Roleplay - RP Start")
         .setDescription(
@@ -267,7 +356,6 @@ client.on('interactionCreate', async (interaction) => {
 
       await channel.send({ embeds: [embed] });
 
-      // Rename channel to green (RP active)
       await updateSessionChannelStatus('green');
 
       await interaction.reply({
@@ -299,14 +387,13 @@ client.on('interactionCreate', async (interaction) => {
       description += `\n\nStaff: <@${interaction.user.id}> **• Today at ${time}**`;
 
       const embed = new EmbedBuilder()
-        .setColor(0xFF0000) // Red for stop
+        .setColor(0xFF0000)
         .setThumbnail(SERVER_LOGO_URL)
         .setTitle("New Jersey State Roleplay - RP Stop")
         .setDescription(description);
 
       await channel.send({ embeds: [embed] });
 
-      // Rename channel back to red (RP ended / no active session)
       await updateSessionChannelStatus('red');
 
       await interaction.reply({
